@@ -125,6 +125,12 @@ html, body {
   white-space: nowrap;
 }
 
+.hud-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .icon-btn {
   width: 42px;
   height: 42px;
@@ -132,11 +138,16 @@ html, body {
   border: 1px solid rgba(233,196,106,.45);
   background: rgba(6,26,20,.7);
   color: var(--gold);
-  font-size: 18px;
+  font-size: 17px;
   cursor: pointer;
   transition: transform .15s ease, background .2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
 }
 .icon-btn:active { transform: scale(.9); }
+@media (hover: hover) { .icon-btn:hover { background: rgba(20,60,46,.9); } }
 
 /* ─────────── Шуз (колода) ─────────── */
 
@@ -546,6 +557,198 @@ html, body {
   animation: spin .8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─────────── Модальные окна (правила, настройки) ─────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(3,14,10,.72);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s ease;
+}
+
+.modal-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  max-height: min(84dvh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: linear-gradient(180deg, #11533d 0%, #093024 100%);
+  border: 1px solid rgba(233,196,106,.5);
+  border-radius: 20px;
+  padding: 22px 24px 18px;
+  box-shadow: 0 24px 70px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.06);
+  transform: translateY(16px) scale(.97);
+  transition: transform .25s cubic-bezier(.2,.9,.3,1.2);
+}
+.modal-backdrop.open .modal { transform: none; }
+
+.modal h2 {
+  font-family: var(--font-display);
+  color: var(--gold);
+  letter-spacing: 1px;
+  margin: 0 0 12px;
+  font-size: clamp(19px, 4vmin, 25px);
+}
+
+.modal h3 {
+  font-family: var(--font-display);
+  color: rgba(233,196,106,.85);
+  margin: 16px 0 6px;
+  font-size: clamp(14px, 2.6vmin, 17px);
+  letter-spacing: 1px;
+}
+
+.modal p { margin: 8px 0; line-height: 1.5; font-size: clamp(13px, 2.4vmin, 15px); }
+.modal ul, .modal ol { margin: 6px 0; padding-left: 22px; line-height: 1.55; font-size: clamp(13px, 2.4vmin, 15px); }
+.modal li { margin: 3px 0; }
+.modal .hint { opacity: .75; font-size: clamp(12px, 2.2vmin, 13.5px); }
+.modal b { color: #ffe4a8; }
+
+.modal ul.payouts { list-style: none; padding-left: 0; }
+.modal ul.payouts li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px dashed rgba(255,255,255,.12);
+  padding: 6px 2px;
+}
+
+kbd {
+  background: rgba(0,0,0,.45);
+  border: 1px solid rgba(233,196,106,.4);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-family: var(--font-ui);
+  font-size: .92em;
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(233,196,106,.45);
+  background: rgba(6,26,20,.75);
+  color: var(--gold);
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform .15s ease;
+}
+.modal-close:active { transform: scale(.88); }
+
+/* ─────────── Настройки: строки, переключатели, слайдеры ─────────── */
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 2px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.setting-row:last-child { border-bottom: none; }
+
+.setting-info b {
+  display: block;
+  font-size: clamp(14px, 2.6vmin, 16px);
+  color: #ffe4a8;
+}
+.setting-info span {
+  display: block;
+  font-size: 12px;
+  opacity: .6;
+  margin-top: 2px;
+}
+
+.switch {
+  position: relative;
+  width: 54px;
+  height: 30px;
+  flex: none;
+  display: inline-block;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+.switch .track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(255,255,255,.16);
+  transition: background .2s ease;
+  pointer-events: none;
+}
+.switch .track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #cfe3da;
+  box-shadow: 0 2px 5px rgba(0,0,0,.45);
+  transition: transform .2s ease, background .2s ease;
+}
+.switch input:checked + .track { background: #2e9c6f; }
+.switch input:checked + .track::after { transform: translateX(24px); background: #fff; }
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: min(200px, 42vw);
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,.18);
+  outline: none;
+  cursor: pointer;
+  flex: none;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--gold);
+  border: 2px solid rgba(255,255,255,.35);
+  box-shadow: 0 2px 6px rgba(0,0,0,.5);
+  cursor: pointer;
+}
+input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--gold);
+  border: 2px solid rgba(255,255,255,.35);
+  box-shadow: 0 2px 6px rgba(0,0,0,.5);
+  cursor: pointer;
+}
 
 /* ─────────── Адаптивность ─────────── */
 

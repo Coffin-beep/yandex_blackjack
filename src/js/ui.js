@@ -6,7 +6,8 @@
 import { BlackjackGame, PHASE } from './game.js';
 import { getProfile, setBalance, persistProfile } from './storage.js';
 import { formatHandValue } from './deck.js';
-import { sfx, setSoundEnabled } from './audio.js';
+import { sfx, setSoundEnabled, setSfxVolume } from './audio.js';
+import { setMusicEnabled, setMusicVolume } from './music.js';
 import { showFullscreenAd, isMockMode } from './sdk.js';
 
 const CHIPS = [
@@ -40,7 +41,9 @@ export function createUI(root) {
         </div>
         <div class="hud-center" id="table-name">BLACKJACK · выплата 3:2</div>
         <div class="hud-right">
-          <button id="btn-sound" class="icon-btn" title="Звук">🔊</button>
+          <button id="btn-rules" class="icon-btn" title="Правила игры">❓</button>
+          <button id="btn-settings" class="icon-btn" title="Настройки звука">⚙️</button>
+          <button id="btn-sound" class="icon-btn" title="Звуки вкл/выкл">🔊</button>
         </div>
       </header>
 
@@ -82,6 +85,71 @@ export function createUI(root) {
       <div class="ad-overlay" id="ad-overlay">
         <div class="ad-box"><div class="spinner"></div>Реклама…</div>
       </div>
+
+      <!-- ───────── Модальное окно: правила ───────── -->
+      <div class="modal-backdrop" id="rules-modal">
+        <div class="modal">
+          <button class="modal-close" data-close title="Закрыть">✕</button>
+          <h2>♠ Правила Блэкджека</h2>
+          <p><b>Цель:</b> набрать сумму очков ближе к <b>21</b>, чем у дилера, но не перебрать.</p>
+          <h3>Стоимость карт</h3>
+          <ul>
+            <li>2–10 — по номиналу</li>
+            <li>Валет, Дама, Король — <b>10</b></li>
+            <li>Туз — <b>1 или 11</b> (как выгоднее руке)</li>
+          </ul>
+          <h3>Ход игры</h3>
+          <ol>
+            <li>Сделайте ставку фишками и нажмите «Раздать».</li>
+            <li>Вам и дилеру раздают по 2 карты (одна карта дилера закрыта).</li>
+            <li>Ваш ход: берите карты или останавливайтесь.</li>
+            <li>Дилер вскрывает карту и добирает до 17.</li>
+            <li>Подсчёт результата и выплата.</li>
+          </ol>
+          <h3>Действия игрока</h3>
+          <ul>
+            <li><b>Ещё (Hit)</b> — взять следующую карту.</li>
+            <li><b>Хватит (Stand)</b> — остановиться и передать ход дилеру.</li>
+            <li><b>×2 Удвоить (Double Down)</b> — удвоить ставку и получить ровно одну карту. Доступно только на первых двух картах.</li>
+          </ul>
+          <h3>Выплаты</h3>
+          <ul class="payouts">
+            <li><span>Блэкджек (21 с двух карт)</span><b>3 : 2</b></li>
+            <li><span>Обычный выигрыш</span><b>1 : 1</b></li>
+            <li><span>Ничья (равные счёта)</span><b>ставка возвращается</b></li>
+          </ul>
+          <h3>Дилер</h3>
+          <p>Дилер добирает карты, пока сумма меньше 17, и останавливается на 17 (включая мягкие 17, например А+6).</p>
+          <p class="hint">Перебор — проигрыш, даже если дилер тоже перебрал бы позже. Ставки — фишками 10–500, баланс сохраняется автоматически. Банкрот? Жмите «Бонус +1000».</p>
+          <p class="hint">Клавиши: <kbd>H</kbd> — ещё, <kbd>S</kbd> — хватит, <kbd>D</kbd> — удвоить, <kbd>Пробел</kbd> — раздать, <kbd>R</kbd> — повторить ставку.</p>
+        </div>
+      </div>
+
+      <!-- ───────── Модальное окно: настройки звука ───────── -->
+      <div class="modal-backdrop" id="settings-modal">
+        <div class="modal">
+          <button class="modal-close" data-close title="Закрыть">✕</button>
+          <h2>⚙️ Настройки</h2>
+
+          <div class="setting-row">
+            <div class="setting-info"><b>🎶 Музыка</b><span>Фоновая музыка стола</span></div>
+            <label class="switch"><input type="checkbox" id="opt-music"><span class="track"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info"><b>Громкость музыки</b></div>
+            <input type="range" id="opt-music-vol" min="0" max="1" step="0.05" />
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info"><b>🔊 Звуки</b><span>Карты, фишки, выигрыши</span></div>
+            <label class="switch"><input type="checkbox" id="opt-sfx"><span class="track"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info"><b>Громкость звуков</b></div>
+            <input type="range" id="opt-sfx-vol" min="0" max="1" step="0.05" />
+          </div>
+        </div>
+      </div>
     </div>
   `;
 
@@ -89,6 +157,13 @@ export function createUI(root) {
   const els = {
     balance: $('#balance'),
     sound: $('#btn-sound'),
+    rulesBtn: $('#btn-rules'),
+    settingsBtn: $('#btn-settings'),
+    modals: [...root.querySelectorAll('.modal-backdrop')],
+    optMusic: $('#opt-music'),
+    optMusicVol: $('#opt-music-vol'),
+    optSfx: $('#opt-sfx'),
+    optSfxVol: $('#opt-sfx-vol'),
     shoe: $('#shoe'),
     dealerHand: $('#dealer-hand'),
     playerHand: $('#player-hand'),
@@ -105,14 +180,15 @@ export function createUI(root) {
 
   let cardEls = new Map(); // uid -> element
   let lastAdTime = Date.now();
+  let bannerTimer = null; // автоскрытие баннера результата
   let game;
 
   /* ─────────── Кнопки ─────────── */
 
   const BUTTONS = {
-    deal: { label: '🂡 Раздать', cls: 'primary', fn: () => maybeAdThen(() => game.deal()) },
-    clear: { label: 'Очистить', fn: () => { game.clearBet(); sfx.chip(); } },
-    rebet: { label: 'Повторить', fn: () => { game.rebet(); sfx.chip(); } },
+    deal: { label: '🂡 Раздать', cls: 'primary', fn: () => { hideBanner(); maybeAdThen(() => game.deal()); } },
+    clear: { label: 'Очистить', fn: () => { game.clearBet(); hideBanner(); sfx.chip(); } },
+    rebet: { label: 'Повторить', fn: () => { game.rebet(); hideBanner(); sfx.chip(); } },
     bonus: { label: '🎁 Бонус +1000', cls: 'bonus', fn: () => { setBalance(getProfile().balance + 1000); sfx.win(); renderBalance(); renderControls(); } },
     hit: { label: 'Ещё', cls: 'primary', fn: () => game.hit() },
     stand: { label: 'Хватит', cls: 'danger', fn: () => game.stand() },
@@ -328,7 +404,10 @@ export function createUI(root) {
       el.dataset.value = c.value;
       el.innerHTML = `<span>${c.label}</span>`;
       el.addEventListener('click', () => {
-        if (game.placeChip(c.value)) sfx.chip();
+        if (game.placeChip(c.value)) {
+          hideBanner(); // баннер прошлого раунда не должен перекрывать ставки
+          sfx.chip();
+        }
       });
       els.chipRack.appendChild(el);
     }
@@ -353,9 +432,14 @@ export function createUI(root) {
     else if (r.type === 'lose') sfx.lose();
     else sfx.push();
     renderBalance();
+
+    // Баннер не должен висеть вечно: автоскрытие, а при любой новой ставке — мгновенно
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(hideBanner, 2600);
   }
 
   function hideBanner() {
+    clearTimeout(bannerTimer);
     els.banner.className = 'banner';
   }
 
@@ -389,7 +473,75 @@ export function createUI(root) {
     }
   }
 
-  /* ─────────── Звук ─────────── */
+  /* ─────────── Модальные окна ─────────── */
+
+  function openModal(m) {
+    m.classList.add('open');
+  }
+
+  function closeModal(m) {
+    m.classList.remove('open');
+  }
+
+  els.rulesBtn.addEventListener('click', () => openModal(els.modals[0]));
+
+  els.settingsBtn.addEventListener('click', () => {
+    syncSettingsUI();
+    openModal(els.modals[1]);
+  });
+
+  for (const m of els.modals) {
+    m.addEventListener('click', (e) => {
+      if (e.target === m) closeModal(m); // клик по затемнению
+    });
+    m.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeModal(m)));
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') els.modals.forEach(closeModal);
+  });
+
+  /* ─────────── Настройки звука ─────────── */
+
+  function syncSettingsUI() {
+    const p = getProfile();
+    els.optMusic.checked = p.music;
+    els.optMusicVol.value = p.musicVolume;
+    els.optSfx.checked = p.sound;
+    els.optSfxVol.value = p.sfxVolume;
+  }
+
+  els.optMusic.addEventListener('change', () => {
+    const p = getProfile();
+    p.music = els.optMusic.checked;
+    persistProfile(true);
+    setMusicEnabled(p.music); // включение стартует музыку сразу (жест уже был)
+  });
+
+  els.optMusicVol.addEventListener('input', () => {
+    const p = getProfile();
+    p.musicVolume = +els.optMusicVol.value;
+    setMusicVolume(p.musicVolume);
+    persistProfile();
+  });
+
+  els.optSfx.addEventListener('change', () => {
+    const p = getProfile();
+    p.sound = els.optSfx.checked;
+    persistProfile(true);
+    setSoundEnabled(p.sound);
+    renderSoundBtn();
+    if (p.sound) sfx.chip();
+  });
+
+  els.optSfxVol.addEventListener('input', () => {
+    const p = getProfile();
+    p.sfxVolume = +els.optSfxVol.value;
+    setSfxVolume(p.sfxVolume);
+    persistProfile();
+  });
+
+  /* ─────────── Звук (быстрая кнопка) ─────────── */
 
   function renderSoundBtn() {
     els.sound.textContent = getProfile().sound ? '🔊' : '🔇';
@@ -398,7 +550,7 @@ export function createUI(root) {
   els.sound.addEventListener('click', () => {
     const p = getProfile();
     p.sound = !p.sound;
-    persistProfile();
+    persistProfile(true);
     setSoundEnabled(p.sound);
     renderSoundBtn();
     if (p.sound) sfx.chip();
@@ -427,6 +579,9 @@ export function createUI(root) {
   renderControls();
   renderSoundBtn();
   setSoundEnabled(getProfile().sound);
+  setSfxVolume(getProfile().sfxVolume);
+  setMusicVolume(getProfile().musicVolume);
+  // музыка стартует после первого жеста пользователя (см. main.js)
 
   if (isMockMode()) {
     els.status.textContent = 'Сделайте ставку';

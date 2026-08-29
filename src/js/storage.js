@@ -9,7 +9,10 @@ const KEYS = ['profile'];
 const DEFAULTS = {
   balance: 1000,
   lastBet: 0,
-  sound: true,
+  sound: true,        // звуковые эффекты
+  sfxVolume: 1,       // громкость эффектов 0..1
+  music: true,        // фоновая музыка
+  musicVolume: 0.55,  // громкость музыки 0..1
   stats: { hands: 0, wins: 0, losses: 0, pushes: 0, blackjacks: 0, bestBalance: 1000 }
 };
 
@@ -38,6 +41,10 @@ export async function loadProfile() {
   // Санитарные проверки
   if (!Number.isFinite(profile.balance) || profile.balance < 0) profile.balance = DEFAULTS.balance;
   if (typeof profile.sound !== 'boolean') profile.sound = true;
+  if (typeof profile.music !== 'boolean') profile.music = true;
+  const clamp01 = (v, dflt) => (Number.isFinite(v) && v >= 0 && v <= 1 ? v : dflt);
+  profile.sfxVolume = clamp01(+profile.sfxVolume, DEFAULTS.sfxVolume);
+  profile.musicVolume = clamp01(+profile.musicVolume, DEFAULTS.musicVolume);
   return profile;
 }
 

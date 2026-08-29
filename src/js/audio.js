@@ -4,7 +4,9 @@
  */
 
 let ctx = null;
+let sfxMaster = null;
 let enabled = true;
+let sfxVolume = 1;
 
 function ensureCtx() {
   if (!ctx) {
@@ -13,7 +15,17 @@ function ensureCtx() {
     ctx = new AC();
   }
   if (ctx.state === 'suspended') ctx.resume();
+  if (!sfxMaster) {
+    sfxMaster = ctx.createGain();
+    sfxMaster.gain.value = sfxVolume;
+    sfxMaster.connect(ctx.destination);
+  }
   return ctx;
+}
+
+/** Общий AudioContext — используется и музыкальным модулем (music.js). */
+export function getCtx() {
+  return ensureCtx();
 }
 
 /** Базовый тон: частота, длительность, тип волны, громкость. */
@@ -29,7 +41,7 @@ function tone({ freq = 440, dur = 0.1, type = 'sine', vol = 0.2, delay = 0, slid
   if (slide) osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), t0 + dur);
   gain.gain.setValueAtTime(vol, t0);
   gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  osc.connect(gain).connect(c.destination);
+  osc.connect(gain).connect(sfxMaster);
   osc.start(t0);
   osc.stop(t0 + dur + 0.02);
 }
@@ -51,7 +63,7 @@ function noiseBurst({ dur = 0.06, vol = 0.25, delay = 0 }) {
   filter.frequency.value = 1200;
   gain.gain.value = vol;
   src.buffer = buf;
-  src.connect(filter).connect(gain).connect(c.destination);
+  src.connect(filter).connect(gain).connect(sfxMaster);
   src.start(t0);
 }
 
@@ -93,6 +105,12 @@ export const sfx = {
 export function setSoundEnabled(on) {
   enabled = !!on;
   if (enabled) ensureCtx();
+}
+
+/** Громкость звуковых эффектов (0..1) — слайдер в настройках. */
+export function setSfxVolume(v) {
+  sfxVolume = Math.min(1, Math.max(0, +v || 0));
+  if (sfxMaster) sfxMaster.gain.value = sfxVolume;
 }
 
 export function isSoundEnabled() {

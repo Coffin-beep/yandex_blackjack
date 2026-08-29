@@ -3,9 +3,10 @@
  */
 
 import { initSDK, signalReady, isMockMode } from './js/sdk.js';
-import { loadProfile } from './js/storage.js';
+import { loadProfile, getProfile } from './js/storage.js';
 import { createUI } from './js/ui.js';
 import { unlockAudio } from './js/audio.js';
+import { startMusic } from './js/music.js';
 import './styles/main.css';
 
 async function bootstrap() {
@@ -23,8 +24,10 @@ async function bootstrap() {
   signalReady();
 
   // Разблокировка звука по первому взаимодействию (политики мобильных браузеров)
+  // + старт фоновой музыки, если она включена в настройках
   const unlock = () => {
     unlockAudio();
+    if (getProfile().music) startMusic();
     window.removeEventListener('pointerdown', unlock);
     window.removeEventListener('keydown', unlock);
   };
