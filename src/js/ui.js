@@ -43,7 +43,6 @@ export function createUI(root) {
         <div class="hud-right">
           <button id="btn-rules" class="icon-btn" title="Правила игры">❓</button>
           <button id="btn-settings" class="icon-btn" title="Настройки звука">⚙️</button>
-          <button id="btn-sound" class="icon-btn" title="Звуки вкл/выкл">🔊</button>
         </div>
       </header>
 
@@ -156,7 +155,6 @@ export function createUI(root) {
   const $ = (sel) => root.querySelector(sel);
   const els = {
     balance: $('#balance'),
-    sound: $('#btn-sound'),
     rulesBtn: $('#btn-rules'),
     settingsBtn: $('#btn-settings'),
     modals: [...root.querySelectorAll('.modal-backdrop')],
@@ -531,7 +529,6 @@ export function createUI(root) {
     p.sound = els.optSfx.checked;
     persistProfile(true);
     setSoundEnabled(p.sound);
-    renderSoundBtn();
     if (p.sound) sfx.chip();
   });
 
@@ -540,21 +537,6 @@ export function createUI(root) {
     p.sfxVolume = +els.optSfxVol.value;
     setSfxVolume(p.sfxVolume);
     persistProfile();
-  });
-
-  /* ─────────── Звук (быстрая кнопка) ─────────── */
-
-  function renderSoundBtn() {
-    els.sound.textContent = getProfile().sound ? '🔊' : '🔇';
-  }
-
-  els.sound.addEventListener('click', () => {
-    const p = getProfile();
-    p.sound = !p.sound;
-    persistProfile(true);
-    setSoundEnabled(p.sound);
-    renderSoundBtn();
-    if (p.sound) sfx.chip();
   });
 
   /* ─────────── Горячие клавиши (desktop) ─────────── */
@@ -635,7 +617,6 @@ export function createUI(root) {
   renderBalance();
   renderPot();
   renderControls();
-  renderSoundBtn();
   setSoundEnabled(getProfile().sound);
   setSfxVolume(getProfile().sfxVolume);
   setMusicVolume(getProfile().musicVolume);
