@@ -341,7 +341,7 @@ export function createUI(root) {
         c.className = `chip chip-${v} in-pot`;
         c.style.setProperty('--i', i);
         c.style.left = `${(i % 5) * -4}px`;
-        c.style.top = `${-i * 5}px`;
+        c.style.top = `${-Math.min(i, 7) * 4}px`; // стопка не растёт бесконечно вверх
         c.innerHTML = `<span>${v}</span>`;
         els.pot.appendChild(c);
       });
@@ -395,6 +395,7 @@ export function createUI(root) {
     // Чип-рейк доступен только в фазе ставок
     els.chipRack.classList.toggle('disabled', p !== PHASE.BETTING);
     renderChipsAvailability();
+    fitLayout(); // высота панели кнопок меняется — проверяем, что всё влезает
   }
 
   function buildChipRack() {
@@ -571,6 +572,63 @@ export function createUI(root) {
     }
   });
 
+  /* ─────────── Автоподбор размеров под экран ───────────
+     На низких экранах центральная зона (ставка/статус/дуга) сжимается и её
+     надписи уезжают под карты. Меряем «нехватку» места и пропорционально
+     уменьшаем карты, при необходимости включая компактный режим. */
+  const tableEl = root.querySelector('.table');
+  const centerEl = root.querySelector('.center-zone');
+  let fitRaf = null;
+
+  function fitLayout() {
+    cancelAnimationFrame(fitRaf);
+    fitRaf = requestAnimationFrame(() => {
+      // нет раскладки (jsdom/тесты) — выходим, CSS z-index всё равно страхует
+      if (!centerEl || !isFinite(centerEl.clientHeight) || centerEl.clientHeight === 0) return;
+
+      tableEl.classList.remove('compact');
+      tableEl.style.removeProperty('--card-w');
+      tableEl.style.removeProperty('--card-h');
+
+      const squeeze = () => centerEl.scrollHeight - centerEl.clientHeight;
+      if (squeeze() <= 1) return; // всё помещается — штатные размеры
+
+      const applyW = (px) => {
+        // важно переопределить ОБЕ переменные: --card-h вычисляется на :root
+        tableEl.style.setProperty('--card-w', `${px}px`);
+        tableEl.style.setProperty('--card-h', `${Math.round(px * 1.45)}px`);
+      };
+
+      // замер базовой ширины карты (зонд вне потока)
+      const probe = document.createElement('div');
+      probe.className = 'card';
+      probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
+      tableEl.appendChild(probe);
+      let w = probe.offsetWidth || 70;
+      probe.remove();
+
+      // 1) шаг за шагом уменьшаем карты, пока центр не перестанет сжиматься
+      for (let i = 0; i < 8 && w > 44; i++) {
+        if (squeeze() <= 1) break;
+        const dH = squeeze() / 2 + 10; // освобождаем обе руки (дилер + игрок)
+        w = Math.max(44, Math.round((w * 1.45 - dH) / 1.45));
+        applyW(w);
+      }
+      // 2) всё ещё тесно — компактный режим (прячем дугу, уплотняем центр)
+      if (squeeze() > 1) tableEl.classList.add('compact');
+      // 3) финальный проход уменьшения уже в компактном режиме
+      for (let i = 0; i < 6 && w > 44; i++) {
+        if (squeeze() <= 1) break;
+        const dH = squeeze() / 2 + 10;
+        w = Math.max(44, Math.round((w * 1.45 - dH) / 1.45));
+        applyW(w);
+      }
+    });
+  }
+
+  window.addEventListener('resize', fitLayout);
+  window.addEventListener('orientationchange', fitLayout);
+
   /* ─────────── Старт ─────────── */
 
   buildChipRack();
@@ -582,6 +640,8 @@ export function createUI(root) {
   setSfxVolume(getProfile().sfxVolume);
   setMusicVolume(getProfile().musicVolume);
   // музыка стартует после первого жеста пользователя (см. main.js)
+  fitLayout();
+  if (document.fonts?.ready) document.fonts.ready.then(fitLayout);
 
   if (isMockMode()) {
     els.status.textContent = 'Сделайте ставку';
