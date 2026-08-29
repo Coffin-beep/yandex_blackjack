@@ -1,0 +1,436 @@
+/**
+ * ui.js — весь DOM, анимации и обработчики.
+ * Подписывается на события BlackjackGame и рисует стол казино.
+ */
+
+import { BlackjackGame, PHASE } from './game.js';
+import { getProfile, setBalance, persistProfile } from './storage.js';
+import { formatHandValue } from './deck.js';
+import { sfx, setSoundEnabled } from './audio.js';
+import { showFullscreenAd, isMockMode } from './sdk.js';
+
+const CHIPS = [
+  { value: 10, label: '10' },
+  { value: 25, label: '25' },
+  { value: 50, label: '50' },
+  { value: 100, label: '100' },
+  { value: 500, label: '500' }
+];
+
+const RESULT_TEXT = {
+  blackjack: (r) => `БЛЭКДЖЕК! +${r.delta} 🎉`,
+  win: (r) => `Вы выиграли +${r.delta}!`,
+  lose: (r) => (r.playerTotal > 21 ? `Перебор! −${r.delta}` : `Дилер выиграл −${Math.abs(r.delta)}`),
+  push: () => `Ничья — ставка возвращена`
+};
+
+let uid = 0;
+
+export function createUI(root) {
+  /* ─────────── Разметка ─────────── */
+
+  root.innerHTML = `
+    <div id="game" class="table">
+      <header class="hud">
+        <div class="hud-left">
+          <div class="balance-box" title="Ваш баланс">
+            <span class="chip-icon"></span>
+            <span id="balance">0</span>
+          </div>
+        </div>
+        <div class="hud-center" id="table-name">BLACKJACK · выплата 3:2</div>
+        <div class="hud-right">
+          <button id="btn-sound" class="icon-btn" title="Звук">🔊</button>
+        </div>
+      </header>
+
+      <div class="shoe" id="shoe" aria-hidden="true">
+        <div class="shoe-stack"></div>
+        <div class="shoe-label">ШУЗ</div>
+      </div>
+
+      <main class="table-felt">
+        <section class="hand-area dealer">
+          <div class="area-label">
+            ДИЛЕР <span class="score-badge" id="dealer-score">—</span>
+          </div>
+          <div class="hand" id="dealer-hand"></div>
+        </section>
+
+        <div class="center-zone">
+          <div class="arc-text">BLACKJACK PAYS 3 TO 2</div>
+          <div class="pot" id="pot"></div>
+          <div class="pot-label" id="pot-label"></div>
+          <div class="status" id="status">Сделайте ставку</div>
+        </div>
+
+        <section class="hand-area player">
+          <div class="hand" id="player-hand"></div>
+          <div class="area-label">
+            ВЫ <span class="score-badge" id="player-score">—</span>
+          </div>
+        </section>
+
+        <div class="banner" id="banner"></div>
+      </main>
+
+      <footer class="controls">
+        <div class="chip-rack" id="chip-rack"></div>
+        <div class="btn-row" id="btn-row"></div>
+      </footer>
+
+      <div class="ad-overlay" id="ad-overlay">
+        <div class="ad-box"><div class="spinner"></div>Реклама…</div>
+      </div>
+    </div>
+  `;
+
+  const $ = (sel) => root.querySelector(sel);
+  const els = {
+    balance: $('#balance'),
+    sound: $('#btn-sound'),
+    shoe: $('#shoe'),
+    dealerHand: $('#dealer-hand'),
+    playerHand: $('#player-hand'),
+    dealerScore: $('#dealer-score'),
+    playerScore: $('#player-score'),
+    status: $('#status'),
+    pot: $('#pot'),
+    potLabel: $('#pot-label'),
+    banner: $('#banner'),
+    chipRack: $('#chip-rack'),
+    btnRow: $('#btn-row'),
+    adOverlay: $('#ad-overlay')
+  };
+
+  let cardEls = new Map(); // uid -> element
+  let lastAdTime = Date.now();
+  let game;
+
+  /* ─────────── Кнопки ─────────── */
+
+  const BUTTONS = {
+    deal: { label: '🂡 Раздать', cls: 'primary', fn: () => maybeAdThen(() => game.deal()) },
+    clear: { label: 'Очистить', fn: () => { game.clearBet(); sfx.chip(); } },
+    rebet: { label: 'Повторить', fn: () => { game.rebet(); sfx.chip(); } },
+    bonus: { label: '🎁 Бонус +1000', cls: 'bonus', fn: () => { setBalance(getProfile().balance + 1000); sfx.win(); renderBalance(); renderControls(); } },
+    hit: { label: 'Ещё', cls: 'primary', fn: () => game.hit() },
+    stand: { label: 'Хватит', cls: 'danger', fn: () => game.stand() },
+    double: { label: '×2 Удвоить', cls: 'accent', fn: () => game.double() }
+  };
+
+  /* ─────────── Игра и события ─────────── */
+
+  game = new BlackjackGame({ onEvent: handleEvent });
+
+  function handleEvent(type, payload) {
+    switch (type) {
+      case 'bet': renderPot(); renderBalance(); renderControls(); break;
+      case 'bet-doubled': renderPot(); renderBalance(); break;
+      case 'round-start': clearTable(); hideBanner(); renderControls(); break;
+      case 'card': addCard(payload); break;
+      case 'reveal': revealCard(payload.card); break;
+      case 'phase': onPhase(payload.phase); break;
+      case 'result': showResult(payload); break;
+      case 'shuffle': setStatus('🔀 Перетасовка колоды…'); sfx.flip(); break;
+      case 'player-bust': break;
+      case 'dealer-bust': setStatus('У дилера перебор!'); break;
+      case 'round-end': renderControls(); break;
+    }
+  }
+
+  function onPhase(p) {
+    switch (p) {
+      case PHASE.BETTING: setStatus('Сделайте ставку'); renderControls(); break;
+      case PHASE.DEALING: setStatus('Раздача…'); renderControls(); break;
+      case PHASE.PLAYER: setStatus('Ваш ход — ещё карту или хватит?'); renderControls(); break;
+      case PHASE.DEALER: setStatus('Дилер играет…'); renderControls(); break;
+      case PHASE.SETTLE: renderControls(); break;
+    }
+    renderScores();
+  }
+
+  /* ─────────── Рендер: карта ─────────── */
+
+  function renderCardEl(card) {
+    const el = document.createElement('div');
+    el.className = 'card face-down' + (isRed(card) ? ' red' : '');
+    el.innerHTML = `
+      <div class="card-inner">
+        <div class="card-face front">
+          <div class="corner top"><b>${card.rank}</b><i>${card.suit}</i></div>
+          <div class="pip">${card.suit}</div>
+          <div class="corner bottom"><b>${card.rank}</b><i>${card.suit}</i></div>
+        </div>
+        <div class="card-face back"></div>
+      </div>`;
+    return el;
+  }
+
+  function isRed(card) {
+    return card.suit === '♥' || card.suit === '♦';
+  }
+
+  function addCard({ who, faceDown }) {
+    const hand = who === 'player' ? els.playerHand : els.dealerHand;
+    const cards = who === 'player' ? game.playerCards : game.dealerCards;
+    const card = cards[cards.length - 1];
+    card.uid = ++uid;
+
+    const el = renderCardEl(card);
+    cardEls.set(card.uid, el);
+    hand.appendChild(el);
+
+    // Подлёт карты от шуза к руке
+    const from = els.shoe.getBoundingClientRect();
+    const to = el.getBoundingClientRect();
+    const dx = from.left - to.left;
+    const dy = from.top - to.top;
+    el.style.transform = `translate(${dx}px, ${dy}px) rotate(-10deg) scale(.8)`;
+    el.style.opacity = '0';
+
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      el.style.transition = 'transform .38s cubic-bezier(.2,.75,.25,1), opacity .3s ease';
+      el.style.transform = '';
+      el.style.opacity = '1';
+    }));
+
+    sfx.card();
+    setTimeout(() => {
+      // Прилетела лицом вниз — открываем, если карта не закрытая
+      if (!faceDown) {
+        el.classList.remove('face-down');
+        sfx.flip();
+      }
+      renderScores();
+    }, 400);
+    renderScores();
+  }
+
+  function revealCard(card) {
+    const el = cardEls.get(card.uid);
+    if (el) {
+      el.classList.remove('face-down');
+      sfx.flip();
+    }
+    renderScores();
+  }
+
+  function clearTable() {
+    els.playerHand.innerHTML = '';
+    els.dealerHand.innerHTML = '';
+    cardEls.clear();
+    renderScores();
+  }
+
+  /* ─────────── Рендер: очки ─────────── */
+
+  function renderScores() {
+    const pv = game.playerValue();
+    const pText = game.playerCards.length ? formatHandValue(game.playerCards) : '—';
+    els.playerScore.textContent = pText;
+    els.playerScore.classList.toggle('bust', pv?.bust);
+    els.playerScore.classList.toggle('bj', pv?.isBlackjack);
+    pop(els.playerScore);
+
+    const hidden = game.holeDown && game.phase !== PHASE.BETTING;
+    const dCards = hidden ? game.dealerCards.filter((c) => !c.faceDown) : game.dealerCards;
+    const dText = dCards.length ? formatHandValue(dCards) + (hidden && game.dealerCards.length > 1 ? '+?' : '') : '—';
+    els.dealerScore.textContent = dText;
+    const dv = game.dealerValue();
+    els.dealerScore.classList.toggle('bust', !hidden && dv.bust);
+    els.dealerScore.classList.toggle('bj', !hidden && dv.isBlackjack);
+    pop(els.dealerScore);
+  }
+
+  function pop(el) {
+    el.classList.remove('pop');
+    void el.offsetWidth;
+    el.classList.add('pop');
+  }
+
+  /* ─────────── Рендер: банк, ставка ─────────── */
+
+  function renderBalance() {
+    els.balance.textContent = getProfile().balance.toLocaleString('ru-RU');
+    pop(els.balance.parentElement);
+  }
+
+  function renderPot() {
+    const bet = game.bet;
+    els.pot.innerHTML = '';
+    if (bet > 0) {
+      chipBreakdown(bet).forEach((v, i) => {
+        const c = document.createElement('div');
+        c.className = `chip chip-${v} in-pot`;
+        c.style.setProperty('--i', i);
+        c.style.left = `${(i % 5) * -4}px`;
+        c.style.top = `${-i * 5}px`;
+        c.innerHTML = `<span>${v}</span>`;
+        els.pot.appendChild(c);
+      });
+      els.potLabel.textContent = `Ставка: ${bet.toLocaleString('ru-RU')}`;
+    } else {
+      els.potLabel.textContent = '';
+    }
+  }
+
+  function chipBreakdown(amount) {
+    const out = [];
+    let rest = amount;
+    for (let i = CHIPS.length - 1; i >= 0; i--) {
+      while (rest >= CHIPS[i].value && out.length < 12) {
+        out.push(CHIPS[i].value);
+        rest -= CHIPS[i].value;
+      }
+    }
+    return out;
+  }
+
+  /* ─────────── Рендер: контролы ─────────── */
+
+  function renderControls() {
+    const p = game.phase;
+    let ids = [];
+
+    if (p === PHASE.BETTING) {
+      const broke = getProfile().balance < game.minBet;
+      ids = broke ? ['bonus'] : ['deal', 'clear', 'rebet'];
+    } else if (p === PHASE.PLAYER) {
+      ids = ['hit', 'double', 'stand'];
+    }
+    // В фазах DEALING / DEALER / SETTLE кнопки скрыты — идёт анимация
+
+    els.btnRow.innerHTML = '';
+    for (const id of ids) {
+      const b = BUTTONS[id];
+      const btn = document.createElement('button');
+      btn.className = 'btn' + (b.cls ? ` ${b.cls}` : '');
+      btn.textContent = b.label;
+      btn.disabled =
+        (id === 'deal' && game.bet < game.minBet) ||
+        (id === 'clear' && game.bet === 0) ||
+        (id === 'rebet' && (getProfile().lastBet < game.minBet || getProfile().lastBet > getProfile().balance)) ||
+        (id === 'double' && !game.canDouble);
+      btn.addEventListener('click', b.fn);
+      els.btnRow.appendChild(btn);
+    }
+
+    // Чип-рейк доступен только в фазе ставок
+    els.chipRack.classList.toggle('disabled', p !== PHASE.BETTING);
+    renderChipsAvailability();
+  }
+
+  function buildChipRack() {
+    for (const c of CHIPS) {
+      const el = document.createElement('button');
+      el.className = `chip chip-${c.value} rack-chip`;
+      el.dataset.value = c.value;
+      el.innerHTML = `<span>${c.label}</span>`;
+      el.addEventListener('click', () => {
+        if (game.placeChip(c.value)) sfx.chip();
+      });
+      els.chipRack.appendChild(el);
+    }
+  }
+
+  function renderChipsAvailability() {
+    const profile = getProfile();
+    for (const el of els.chipRack.children) {
+      const v = +el.dataset.value;
+      el.classList.toggle('unavailable', game.phase !== PHASE.BETTING || v > profile.balance - game.bet);
+    }
+  }
+
+  /* ─────────── Результаты ─────────── */
+
+  function showResult(r) {
+    const text = RESULT_TEXT[r.type]?.(r) ?? '';
+    els.banner.textContent = text;
+    els.banner.className = `banner show ${r.type}`;
+    if (r.type === 'blackjack') sfx.blackjack();
+    else if (r.type === 'win') sfx.win();
+    else if (r.type === 'lose') sfx.lose();
+    else sfx.push();
+    renderBalance();
+  }
+
+  function hideBanner() {
+    els.banner.className = 'banner';
+  }
+
+  function setStatus(text) {
+    els.status.textContent = text;
+  }
+
+  /* ─────────── Реклама между раундами ─────────── */
+
+  const AD_EVERY_N_ROUNDS = 3;
+  const AD_COOLDOWN_MS = 65_000;
+
+  function maybeAdThen(action) {
+    const since = Date.now() - lastAdTime;
+    if (game.roundsSinceAd >= AD_EVERY_N_ROUNDS && since > AD_COOLDOWN_MS) {
+      lastAdTime = Date.now();
+      game.roundsSinceAd = 0;
+      els.adOverlay.classList.add('show');
+      const wasSound = getProfile().sound;
+      setSoundEnabled(false);
+      showFullscreenAd({
+        onOpen: () => {},
+        onClose: () => {
+          els.adOverlay.classList.remove('show');
+          setSoundEnabled(wasSound);
+          action();
+        }
+      });
+    } else {
+      action();
+    }
+  }
+
+  /* ─────────── Звук ─────────── */
+
+  function renderSoundBtn() {
+    els.sound.textContent = getProfile().sound ? '🔊' : '🔇';
+  }
+
+  els.sound.addEventListener('click', () => {
+    const p = getProfile();
+    p.sound = !p.sound;
+    persistProfile();
+    setSoundEnabled(p.sound);
+    renderSoundBtn();
+    if (p.sound) sfx.chip();
+  });
+
+  /* ─────────── Горячие клавиши (desktop) ─────────── */
+
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    const k = e.key.toLowerCase();
+    if (game.phase === PHASE.PLAYER) {
+      if (k === 'h' || k === 'е' || k === 'arrowup') game.hit();
+      if (k === 's' || k === 'ы' || k === 'arrowdown') game.stand();
+      if (k === 'd' || k === 'в') game.double();
+    } else if (game.phase === PHASE.BETTING) {
+      if (k === ' ' || k === 'enter') { e.preventDefault(); maybeAdThen(() => game.deal()); }
+      if (k === 'r' || k === 'к') game.rebet();
+    }
+  });
+
+  /* ─────────── Старт ─────────── */
+
+  buildChipRack();
+  renderBalance();
+  renderPot();
+  renderControls();
+  renderSoundBtn();
+  setSoundEnabled(getProfile().sound);
+
+  if (isMockMode()) {
+    els.status.textContent = 'Сделайте ставку';
+  }
+
+  return { game };
+}
