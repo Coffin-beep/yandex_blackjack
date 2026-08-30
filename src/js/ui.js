@@ -1,6 +1,7 @@
 /**
  * ui.js — весь DOM, анимации и обработчики.
  * Подписывается на события BlackjackGame и рисует стол казино.
+ * Все тексты берутся из i18n.js (язык определён до создания UI).
  */
 
 import { BlackjackGame, PHASE } from './game.js';
@@ -8,7 +9,8 @@ import { getProfile, setBalance, persistProfile } from './storage.js';
 import { formatHandValue } from './deck.js';
 import { sfx, setSoundEnabled, setSfxVolume } from './audio.js';
 import { setMusicEnabled, setMusicVolume } from './music.js';
-import { showFullscreenAd, isMockMode } from './sdk.js';
+import { showFullscreenAd } from './sdk.js';
+import { t, formatNumber } from './i18n.js';
 
 const CHIPS = [
   { value: 10, label: '10' },
@@ -19,10 +21,10 @@ const CHIPS = [
 ];
 
 const RESULT_TEXT = {
-  blackjack: (r) => `БЛЭКДЖЕК! +${r.delta} 🎉`,
-  win: (r) => `Вы выиграли +${r.delta}!`,
-  lose: (r) => (r.playerTotal > 21 ? `Перебор! −${r.delta}` : `Дилер выиграл −${Math.abs(r.delta)}`),
-  push: () => `Ничья — ставка возвращена`
+  blackjack: (r) => t('result_blackjack', { delta: r.delta }),
+  win: (r) => t('result_win', { delta: r.delta }),
+  lose: (r) => (r.playerTotal > 21 ? t('result_bust', { abs: r.delta }) : t('result_lose', { abs: Math.abs(r.delta) })),
+  push: () => t('result_push')
 };
 
 let uid = 0;
@@ -34,42 +36,42 @@ export function createUI(root) {
     <div id="game" class="table">
       <header class="hud">
         <div class="hud-left">
-          <div class="balance-box" title="Ваш баланс">
+          <div class="balance-box" title="${t('balance_title')}">
             <span class="chip-icon"></span>
             <span id="balance">0</span>
           </div>
         </div>
-        <div class="hud-center" id="table-name">BLACKJACK · выплата 3:2</div>
+        <div class="hud-center" id="table-name">${t('hud_title')}</div>
         <div class="hud-right">
-          <button id="btn-rules" class="icon-btn" title="Правила игры">❓</button>
-          <button id="btn-settings" class="icon-btn" title="Настройки звука">⚙️</button>
+          <button id="btn-rules" class="icon-btn" title="${t('rules_btn_title')}">❓</button>
+          <button id="btn-settings" class="icon-btn" title="${t('settings_btn_title')}">⚙️</button>
         </div>
       </header>
 
       <div class="shoe" id="shoe" aria-hidden="true">
         <div class="shoe-stack"></div>
-        <div class="shoe-label">ШУЗ</div>
+        <div class="shoe-label">${t('shoe')}</div>
       </div>
 
       <main class="table-felt">
         <section class="hand-area dealer">
           <div class="area-label">
-            ДИЛЕР <span class="score-badge" id="dealer-score">—</span>
+            ${t('dealer')} <span class="score-badge" id="dealer-score">—</span>
           </div>
           <div class="hand" id="dealer-hand"></div>
         </section>
 
         <div class="center-zone">
-          <div class="arc-text">BLACKJACK PAYS 3 TO 2</div>
+          <div class="arc-text">${t('arc')}</div>
           <div class="pot" id="pot"></div>
           <div class="pot-label" id="pot-label"></div>
-          <div class="status" id="status">Сделайте ставку</div>
+          <div class="status" id="status">${t('status_bet')}</div>
         </div>
 
         <section class="hand-area player">
           <div class="hand" id="player-hand"></div>
           <div class="area-label">
-            ВЫ <span class="score-badge" id="player-score">—</span>
+            ${t('you')} <span class="score-badge" id="player-score">—</span>
           </div>
         </section>
 
@@ -82,75 +84,46 @@ export function createUI(root) {
       </footer>
 
       <div class="ad-overlay" id="ad-overlay">
-        <div class="ad-box"><div class="spinner"></div>Реклама…</div>
+        <div class="ad-box"><div class="spinner"></div>${t('ad_text')}</div>
       </div>
 
       <!-- ───────── Модальное окно: правила ───────── -->
       <div class="modal-backdrop" id="rules-modal">
         <div class="modal">
-          <button class="modal-close" data-close title="Закрыть">✕</button>
-          <h2>♠ Правила Блэкджека</h2>
-          <p><b>Цель:</b> набрать сумму очков ближе к <b>21</b>, чем у дилера, но не перебрать.</p>
-          <h3>Стоимость карт</h3>
-          <ul>
-            <li>2–10 — по номиналу</li>
-            <li>Валет, Дама, Король — <b>10</b></li>
-            <li>Туз — <b>1 или 11</b> (как выгоднее руке)</li>
-          </ul>
-          <h3>Ход игры</h3>
-          <ol>
-            <li>Сделайте ставку фишками и нажмите «Раздать».</li>
-            <li>Вам и дилеру раздают по 2 карты (одна карта дилера закрыта).</li>
-            <li>Ваш ход: берите карты или останавливайтесь.</li>
-            <li>Дилер вскрывает карту и добирает до 17.</li>
-            <li>Подсчёт результата и выплата.</li>
-          </ol>
-          <h3>Действия игрока</h3>
-          <ul>
-            <li><b>Ещё (Hit)</b> — взять следующую карту.</li>
-            <li><b>Хватит (Stand)</b> — остановиться и передать ход дилеру.</li>
-            <li><b>×2 Удвоить (Double Down)</b> — удвоить ставку и получить ровно одну карту. Доступно только на первых двух картах.</li>
-          </ul>
-          <h3>Выплаты</h3>
-          <ul class="payouts">
-            <li><span>Блэкджек (21 с двух карт)</span><b>3 : 2</b></li>
-            <li><span>Обычный выигрыш</span><b>1 : 1</b></li>
-            <li><span>Ничья (равные счёта)</span><b>ставка возвращается</b></li>
-          </ul>
-          <h3>Дилер</h3>
-          <p>Дилер добирает карты, пока сумма меньше 17, и останавливается на 17 (включая мягкие 17, например А+6).</p>
-          <p class="hint">Перебор — проигрыш, даже если дилер тоже перебрал бы позже. Ставки — фишками 10–500, баланс сохраняется автоматически. Банкрот? Жмите «Бонус +1000».</p>
-          <p class="hint">Клавиши: <kbd>H</kbd> — ещё, <kbd>S</kbd> — хватит, <kbd>D</kbd> — удвоить, <kbd>Пробел</kbd> — раздать, <kbd>R</kbd> — повторить ставку.</p>
+          <button class="modal-close" data-close title="${t('close')}">✕</button>
+          ${t('rules_html')}
         </div>
       </div>
 
-      <!-- ───────── Модальное окно: настройки звука ───────── -->
+      <!-- ───────── Модальное окно: настройки ───────── -->
       <div class="modal-backdrop" id="settings-modal">
         <div class="modal">
-          <button class="modal-close" data-close title="Закрыть">✕</button>
-          <h2>⚙️ Настройки</h2>
+          <button class="modal-close" data-close title="${t('close')}">✕</button>
+          <h2>${t('settings_title')}</h2>
 
           <div class="setting-row">
-            <div class="setting-info"><b>🎶 Музыка</b><span>Фоновая музыка стола</span></div>
+            <div class="setting-info"><b>${t('set_music')}</b><span>${t('set_music_sub')}</span></div>
             <label class="switch"><input type="checkbox" id="opt-music"><span class="track"></span></label>
           </div>
           <div class="setting-row">
-            <div class="setting-info"><b>Громкость музыки</b></div>
+            <div class="setting-info"><b>${t('set_music_vol')}</b></div>
             <input type="range" id="opt-music-vol" min="0" max="1" step="0.05" />
           </div>
 
           <div class="setting-row">
-            <div class="setting-info"><b>🔊 Звуки</b><span>Карты, фишки, выигрыши</span></div>
+            <div class="setting-info"><b>${t('set_sfx')}</b><span>${t('set_sfx_sub')}</span></div>
             <label class="switch"><input type="checkbox" id="opt-sfx"><span class="track"></span></label>
           </div>
           <div class="setting-row">
-            <div class="setting-info"><b>Громкость звуков</b></div>
+            <div class="setting-info"><b>${t('set_sfx_vol')}</b></div>
             <input type="range" id="opt-sfx-vol" min="0" max="1" step="0.05" />
           </div>
         </div>
       </div>
     </div>
   `;
+
+  root.setAttribute('aria-label', t('aria_game'));
 
   const $ = (sel) => root.querySelector(sel);
   const els = {
@@ -184,13 +157,13 @@ export function createUI(root) {
   /* ─────────── Кнопки ─────────── */
 
   const BUTTONS = {
-    deal: { label: '🂡 Раздать', cls: 'primary', fn: () => { hideBanner(); maybeAdThen(() => game.deal()); } },
-    clear: { label: 'Очистить', fn: () => { game.clearBet(); hideBanner(); sfx.chip(); } },
-    rebet: { label: 'Повторить', fn: () => { game.rebet(); hideBanner(); sfx.chip(); } },
-    bonus: { label: '🎁 Бонус +1000', cls: 'bonus', fn: () => { setBalance(getProfile().balance + 1000); sfx.win(); renderBalance(); renderControls(); } },
-    hit: { label: 'Ещё', cls: 'primary', fn: () => game.hit() },
-    stand: { label: 'Хватит', cls: 'danger', fn: () => game.stand() },
-    double: { label: '×2 Удвоить', cls: 'accent', fn: () => game.double() }
+    deal: { label: t('btn_deal'), cls: 'primary', fn: () => { hideBanner(); maybeAdThen(() => game.deal()); } },
+    clear: { label: t('btn_clear'), fn: () => { game.clearBet(); hideBanner(); sfx.chip(); } },
+    rebet: { label: t('btn_rebet'), fn: () => { game.rebet(); hideBanner(); sfx.chip(); } },
+    bonus: { label: t('btn_bonus'), cls: 'bonus', fn: () => { setBalance(getProfile().balance + 1000); sfx.win(); renderBalance(); renderControls(); } },
+    hit: { label: t('btn_hit'), cls: 'primary', fn: () => game.hit() },
+    stand: { label: t('btn_stand'), cls: 'danger', fn: () => game.stand() },
+    double: { label: t('btn_double'), cls: 'accent', fn: () => game.double() }
   };
 
   /* ─────────── Игра и события ─────────── */
@@ -206,19 +179,19 @@ export function createUI(root) {
       case 'reveal': revealCard(payload.card); break;
       case 'phase': onPhase(payload.phase); break;
       case 'result': showResult(payload); break;
-      case 'shuffle': setStatus('🔀 Перетасовка колоды…'); sfx.flip(); break;
+      case 'shuffle': setStatus(t('status_shuffle')); sfx.flip(); break;
       case 'player-bust': break;
-      case 'dealer-bust': setStatus('У дилера перебор!'); break;
+      case 'dealer-bust': setStatus(t('status_dealer_bust')); break;
       case 'round-end': renderControls(); break;
     }
   }
 
   function onPhase(p) {
     switch (p) {
-      case PHASE.BETTING: setStatus('Сделайте ставку'); renderControls(); break;
-      case PHASE.DEALING: setStatus('Раздача…'); renderControls(); break;
-      case PHASE.PLAYER: setStatus('Ваш ход — ещё карту или хватит?'); renderControls(); break;
-      case PHASE.DEALER: setStatus('Дилер играет…'); renderControls(); break;
+      case PHASE.BETTING: setStatus(t('status_bet')); renderControls(); break;
+      case PHASE.DEALING: setStatus(t('status_dealing')); renderControls(); break;
+      case PHASE.PLAYER: setStatus(t('status_player')); renderControls(); break;
+      case PHASE.DEALER: setStatus(t('status_dealer')); renderControls(); break;
       case PHASE.SETTLE: renderControls(); break;
     }
     renderScores();
@@ -326,7 +299,7 @@ export function createUI(root) {
   /* ─────────── Рендер: банк, ставка ─────────── */
 
   function renderBalance() {
-    els.balance.textContent = getProfile().balance.toLocaleString('ru-RU');
+    els.balance.textContent = formatNumber(getProfile().balance);
     pop(els.balance.parentElement);
   }
 
@@ -343,7 +316,7 @@ export function createUI(root) {
         c.innerHTML = `<span>${v}</span>`;
         els.pot.appendChild(c);
       });
-      els.potLabel.textContent = `Ставка: ${bet.toLocaleString('ru-RU')}`;
+      els.potLabel.textContent = t('bet_label', { bet: formatNumber(bet) });
     } else {
       els.potLabel.textContent = '';
     }
@@ -623,10 +596,6 @@ export function createUI(root) {
   // музыка стартует после первого жеста пользователя (см. main.js)
   fitLayout();
   if (document.fonts?.ready) document.fonts.ready.then(fitLayout);
-
-  if (isMockMode()) {
-    els.status.textContent = 'Сделайте ставку';
-  }
 
   return { game };
 }

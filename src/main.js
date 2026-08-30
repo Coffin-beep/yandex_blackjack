@@ -2,7 +2,8 @@
  * main.js — точка входа: инициализация SDK → загрузка профиля → запуск UI.
  */
 
-import { initSDK, signalReady, isMockMode } from './js/sdk.js';
+import { initSDK, signalReady, isMockMode, getSdkLang } from './js/sdk.js';
+import { initLang } from './js/i18n.js';
 import { loadProfile, getProfile } from './js/storage.js';
 import { createUI } from './js/ui.js';
 import { unlockAudio } from './js/audio.js';
@@ -10,8 +11,9 @@ import { startMusic } from './js/music.js';
 import './styles/main.css';
 
 async function bootstrap() {
-  // 1) Параллельно: SDK + профиль (профиль ждёт SDK из-за облачных данных — сначала SDK)
+  // 1) SDK → язык портала (п. 2.14: автоопределение через i18n.lang) → профиль
   await initSDK();
+  initLang(getSdkLang() || navigator.language || 'ru');
   await loadProfile();
 
   // 2) Рисуем стол

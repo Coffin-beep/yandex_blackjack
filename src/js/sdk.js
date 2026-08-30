@@ -19,9 +19,15 @@ let isMock = false;
 /** Мок для локальной разработки (SDK-скрипт не загружен / запуск вне Яндекса). */
 function createMockSdk() {
   const storage = {};
+  // Для проверки локализации без платформы: ?lang=en в адресной строке
+  // (аналогично переключению языка в debug-панели Яндекса)
+  let mockLang = 'ru';
+  try {
+    mockLang = new URLSearchParams(location.search).get('lang') || 'ru';
+  } catch (_) { /* нет location */ }
   return {
     __mock: true,
-    environment: { i18n: { lang: 'ru' }, payload: '' },
+    environment: { i18n: { lang: mockLang }, payload: '' },
     features: { LoadingAPI: { ready: () => console.log('[mock] LoadingAPI.ready()') } },
     adv: {
       showFullscreenAdv: ({ callbacks = {} } = {}) => {
@@ -83,6 +89,18 @@ export function signalReady() {
 
 export function isMockMode() {
   return isMock;
+}
+
+/**
+ * Язык портала из SDK (ysdk.environment.i18n.lang) — для автоопределения
+ * языка игры (п. 2.14 Требований). Вне платформы — null.
+ */
+export function getSdkLang() {
+  try {
+    return ysdk?.environment?.i18n?.lang ?? null;
+  } catch (_) {
+    return null;
+  }
 }
 
 /**
